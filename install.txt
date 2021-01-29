@@ -177,3 +177,21 @@ output {
 最常用的时，刚部署好时，通过它检查索引是否能正常创建，字段是否正常。或者删除了一些索引等等
 
 
+五、elk-docker目录说明
+
+elk-docker是关于elk的docker运行环境的配置，使用docker-compose可快速部署elk
+
+elk-docker\elasticsearch\目录中有4个e的配置文件，每台e服务器中只保留一个配置文件名，并且文件名为elasticsearch.yml
+
+elasticsearch.yml
+elasticsearch-es2.yml
+elasticsearch-es3.yml 这三个是e集群的配置文件，每个节点放置对应的配置文件
+
+
+elasticsearch-node_lb_for_kibana.yml 这个配置文件的目的是，将该e也加入至集群中，但不参与master选举，不保存数据，仅仅是为了给l做为一个智能调度连接。
+因为e起了集群之后，l中需要配置与e的连接，如果你只是配置连接其中任何一个节点都是不科学的，所以另外再起一个e的节点，将这个节点加入e集群，然后l与这个集群通讯，从而实现智能调度。
+
+
+elk-docker\filebeat-conf\inputs.d\template\该目录是filebeat收集日志的配置，其中：
+app-multiline.yml，mysql.yml 中的日志格式为非json格式，所以在l中要配置正则解析
+nginx-lb.yml,php.yml中收集的日志是json格式的
