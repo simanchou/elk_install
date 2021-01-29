@@ -1,0 +1,179 @@
+
+一、硬件
+
+看日志规模，如果日志一天达到100G（我现在就有这个规模），则e一定要上集群了，我现在三台集群的硬件配置是：8U16G1T，
+然后l跟k在同一台（配置为16U64G300G），因为有些日志不是Json格式，所以要写正则匹配，超耗资源。
+
+
+二、e的集群配置（配置适用于版本7以上，我的版本是7.8.1）
+
+节点一：es1.elk.prod 10.200.78.40
+节点二：es2.elk.prod 10.200.78.42
+节点三：es3.elk.prod 10.200.78.43
+
+=========节点一的配置============
+cluster.name: "es-cluster"
+network.host: 0.0.0.0
+
+# custom config
+# 节点名使用主机名
+node.name: "es1.elk.prod"
+network.publish_host: 10.200.78.40
+#初始主节点
+cluster.initial_master_nodes: ["10.200.78.40"]
+#集群节点列表
+discovery.seed_hosts: ["10.200.78.40","10.200.78.42","10.200.78.43"]
+#是否可以为主节点
+node.master: true
+#是否为数据节点
+node.data: true
+# 开启跨域访问支持，默认为false
+http.cors.enabled: true
+# 跨域访问允许的域名地址，(允许所有域名)以上使用正则
+http.cors.allow-origin: /.*/
+=========节点一的配置============
+节点二，三的配置，就只是修改一下node.name为对应的主机名
+
+
+三、日志解析配置
+
+整个elk的重点配置是l的日志解析配置。日志格式最好是开发能配合，输出的日志是json格式的，elk天生支持json格式的日志，采集时就不需要写日志解析的正则了。
+比如nginx的日志，就可以自定义成json格式的，如下：
+log_format main   '{"timestamp":"$time_iso8601",'
+                      '"ip":"$http_x_real_ip",'
+                      '"client":"$remote_addr",'
+                      '"request_method":"$request_method",'
+                      '"scheme":"$scheme",'
+                      '"domain":"$http_host",'
+                      '"request":"$request_uri",'
+                      '"request_body":"$request_body",'
+                      '"args":"$args",'
+                      '"referer":"$http_referer",'
+                      '"size":$body_bytes_sent,'
+                      '"status":$status,'
+                      '"upstream_status":$upstream_status,'
+                      '"upstreamaddr":"$upstream_addr",'
+                      '"responsetime":$request_time,'
+                      '"upstreamtime":$upstream_response_time,'
+                      '"http_user_agent":"$http_user_agent"'
+                      '}';
+                    
+这样的话，要写nginx日志采集时，就很简单了，配置如下：
+
+l的配置主要是三部分：
+input:即接收日志的输入，比如是我在nginx主机上安装filebeat，通过filebeat读取nginx的日志文件，然后传输给l的
+filter:这部分就是最难部分，如果日志不是json格式的，就要这里写正则，但下面的例子中nginx的日志已经是json格式，因此不需要写正则
+output:这部分就是l将日志解析完（又叫结构化）之后，将数据传给e存储了，即入库保存了。
+
+下面我的例子里，filebeat与l的通讯是开了ssl的，如果你暂时不想开启ssl，即只保留port => 5066即可
+
+================配置开始===========
+# Sample Logstash configuration for creating a simple
+# Beats -> Logstash -> Elasticsearch pipeline.
+
+# nginx log pipeline
+
+input {
+  beats {
+    port => 5066
+    ssl => true
+    ssl_certificate_authorities => ["/opt/ssl/logstash/ca.pem"]
+    ssl_certificate => "/opt/ssl/logstash/logstash.crt"
+    ssl_key => "/opt/ssl/logstash/logstash.p8"
+    ssl_verify_mode => "force_peer"
+  }
+}
+
+filter {
+  if [http_user_agent] == "Go-http-client/1.1" { drop{ } }         //这一句的意思是，我判断http_user_agent这个字段是否是Go-http-client/1.1，是则丢掉drop。因为我有用监控对我的网站做定期监控，看网站是否正常访问，监控的频率很高的，为了减少e的日志量，所以在这里丢掉，不会入库
+  if [log_type] == "http" {          // 因为我的nginx除了开http，还开了tcp端口转的，所以日志采集时，这里加了一个类型判断
+    grok {                  // grok 就是l的一个插件，正则就是在这里的写的，既然我的日志已是json了，为什么这里还要写正则呢。这是我的额外要求，因为日志里只会记录访问的域名，如www.example.com，但我想日志里多一个顶级域名的字段，即example.com，方便做报表时，将该顶级域名下的日志一次过全筛选出来，所以我这里就要手动写正则，将顶级域名识别出来赋值给domain这个字段
+      #match => ["domain", "\.(?<tld>(\w*\.(?:com\.cn|cn|com|net|top|cc|vip)))"]
+      match => ["domain", "(?<tld>(\w*\.(?:com\.cn|cn|com|net|top|cc|vip)))"]
+    }
+    geoip {     // 这个是用来生成地图展示的数据的
+      source => "[client]"
+    }
+    if ![geoip][region_name] {    //这个是我附加的配置，因为IP地区库不句完整，导致有些IP识别不出城市名，凡是识别不出的，我强制统一赋值为Unkown，方便报表汇总
+      mutate { add_field => { "[geoip][region_name]" => "Unknow" } }
+    }
+    useragent {          //这个是l的一个插件，将http_user_agent拆分。其实也就是封装好的正则。user_agent是长这样子的“Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.141 Safari/537.36”，通过这个插件的拆分就可以识别出客户端的操作系统，浏览器名字，版本等客户端信息了，拆分出来的字段加个前缀ua
+      source => "http_user_agent"
+      target => "ua"
+    }
+    mutate {            // mutate又是l的一个插件，它支持很功能，我这里使用了它的一个转换功能
+      convert => {
+        "upstream_status" => "integer"    //将字符串转为了整型，upstream_status的值是200,404，写日志时是字符串的，这里将它转为数字后再入库，目的是为了后面查询报表时方便比较，比如我要查询访问状态码大于200的，如果是字符串是无法表示“大于200”
+        "upstreamtime" => "float"    //同理将字符串的时间转为数字（浮点数）
+      }
+    }
+    date {             //date是l的一个时间解析插件，因为日志的时间是标准的格式了，l能正确识别了的，这里只是告诉l将日志的时间用作你的日志事件的时间。这有点绕口。换一种说法，l收集到日志时，会给日志加一个时间，即收到日志时的时间，则查询时的时间筛选就是基于这个字段进行时间筛选的，这样的话就会引发一个问题，即有时你会发现日志发生的时间与日志收集入库的时间对不上，或者说有延迟。所以一般都将日志内容本身的时间作为l的日志收集时间，这样就不存在时间差了。
+        match => [ "timestamp", "ISO8601" ]
+    }
+  }
+
+  if [log_type] == "stream" {   // 这个是tcp的日志类型的，即http的日志过滤配置在上面的一个}就结束了
+    geoip {
+      source => "[client]"
+    }
+    if ![geoip][region_name] {
+      mutate { add_field => { "[geoip][region_name]" => "Unknow" } }
+    }
+  }
+  
+}
+
+//下面开始就是将日志输出给e的配置了
+//其实l的output支持很多种输出的，比如stdout（屏幕终端），调试正则时最好用。输出到elasticsearch只是其中一个插件而已
+output {
+  if [log_type] == "http" {
+    elasticsearch {
+      hosts => ["http://es1:9200"]                  //配置e的主机名，需要配置hosts文件
+      index => "logstash-nginx-lb_%{+YYYY.MM.dd}"   //配置在e里保持的索引名字，按数据库的模仿理解，可以理解为数据库名，按天保存
+    }
+  } else if [log_type] == "stream" {                //同样我这里有做日志类型的判断，不同的类型保存到不同的数据库名
+    elasticsearch {
+      hosts => ["http://es1:9200"]
+      index => "logstash-nginx-stream_%{+YYYY.MM.dd}"
+    }
+  } else {
+    elasticsearch {
+      hosts => ["http://es1:9200"]
+      index => "logstash-nginx_%{+YYYY.MM.dd}"
+    }
+  }
+}
+================配置结束===========
+
+上面就是针对nginx日志收集的l的配置了，比如上面的配置保存为01-nginx.conf，则l如何引用这个配置文件呢，在pipelines.yml中配置，如下：
+
+==========pipelines.yml配置开始=============
+# This file is where you define your pipelines. You can define multiple.
+# For more information on multiple pipelines, see the documentation:
+#   https://www.elastic.co/guide/en/logstash/current/multiple-pipelines.html
+
+# 这个debug是用了调试正则表达式的
+- pipeline.id: debug
+  path.config: "/usr/share/logstash/pipeline/00-debug_by_fb.conf"
+
+# 引用上面的01-nginx.conf
+- pipeline.id: nginx
+  path.config: "/usr/share/logstash/pipeline/01-nginx.conf"
+
+# 这个是mysql的日志收集，慢查询日志
+- pipeline.id: mysql
+  path.config: "/usr/share/logstash/pipeline/02-mysql-slow-and-game-log.conf"
+  pipeline.workers: 2
+
+==========pipelines.yml配置结束=============
+
+
+四、e的图形管理工具
+
+有几个，但我目前用得最多的就是chrome的一个插件，可以在chrome插件商店安装https://chrome.google.com/webstore/detail/elasticsearch-head/ffmkiejjmecolpfloofpjologoblkegm
+
+安装完之后，打开这个插件，在顶部的连接框那里输入你的e的地址http://localhost:9200/，点连接即可很方便管理e了。
+
+最常用的时，刚部署好时，通过它检查索引是否能正常创建，字段是否正常。或者删除了一些索引等等
+
+

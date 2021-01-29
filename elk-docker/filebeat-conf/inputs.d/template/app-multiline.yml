@@ -1,0 +1,16 @@
+- type: log
+  enabled: true
+  paths:
+    - /data/docker/volumes/status/_data/default.log
+  multiline.pattern: '^\[\d{4}-\d{2}-\d{2}'
+  multiline.negate: true
+  multiline.match: after
+  fields_under_root: true
+  fields:
+    hostname: ${HOSTNAME}
+    project: "${PROJECT}"
+    env: ${ENV}
+    log_type: game
+    app_type: platform
+    app_name: status
+

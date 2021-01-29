@@ -1,0 +1,14 @@
+- type: log
+  enabled: true
+  paths:
+    - /data/docker/volumes/web_agent_api/_data/elk.log
+  json.keys_under_root: true
+  json.overwrite_keys: true
+  fields_under_root: true
+  fields:
+    hostname: ${HOSTNAME}
+    project: "${PROJECT}"
+    env: ${ENV}
+    log_type: api-php
+    app_type: php
+    app_name: agent_api

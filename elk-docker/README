@@ -1,0 +1,107 @@
+客户端使用filebeat发送日志
+
+# 安装filebeat
+sudo rpm --import https://packages.elastic.co/GPG-KEY-elasticsearch
+
+cat <<EOF >/etc/yum.repos.d/elastic.repo
+[elastic-7.x]
+name=Elastic repository for 7.x packages
+baseurl=https://artifacts.elastic.co/packages/7.x/yum
+gpgcheck=1
+gpgkey=https://artifacts.elastic.co/GPG-KEY-elasticsearch
+enabled=1
+autorefresh=1
+type=rpm-md
+EOF
+
+sudo yum makecache
+sudo yum install -y filebeat-7.6.1
+sudo systemctl enable filebeat
+
+
+# 收集nginx日志
+cat <<EOF |sudo tee /etc/filebeat/filebeat.yml
+filebeat.inputs:
+- type: log
+  enabled: true
+  paths:
+    - /data/volumes/balancer/log/access_258dev.com.log
+  json.keys_under_root: true
+  json.overwrite_keys: true
+  fields:
+    project: "258"
+    env: dev
+    source_type: nginx
+    log_type: access
+
+- type: log
+  enabled: true
+  paths:
+    - /data/volumes/balancer/log/access_258test.com.log
+  json.keys_under_root: true
+  json.overwrite_keys: true
+  fields:
+    project: "258"
+    env: test
+    source_type: nginx
+    log_type: access
+
+filebeat.config.modules:
+  path: ${path.config}/modules.d/*.yml
+  reload.enabled: false
+output.logstash:
+   hosts: ["logstash:5066"]
+   loadbalance: true
+processors:
+  - add_host_metadata: ~
+  - add_cloud_metadata: ~
+  - add_docker_metadata: ~
+  - add_kubernetes_metadata: ~
+EOF
+
+
+
+# 收集mysql日志
+cat <<EOF |sudo tee /etc/filebeat/filebeat.yml
+filebeat.inputs:
+#- type: log
+#  enabled: true
+#  paths:
+#    - /data/logs/mysqld/mysql_error.log
+#  json.keys_under_root: true
+#  json.overwrite_keys: true
+#  multiline.pattern: ^\[?20\d{2}(\-|\/|\.)\d{1,2}(\-|\/|\.)\d{1,2}
+#  multiline.negate: true
+#  multiline.match: after
+#  fields:
+#    project: "258"
+#    env: dev
+#    log_type: mysql-error
+
+- type: log
+  enabled: true
+  paths:
+    - /data/logs/mysqld/mysql_slow_query.log
+  json.keys_under_root: true
+  json.overwrite_keys: true
+  multiline.pattern: '^# Time: \[?20\d{2}(\-|\/|\.)\d{1,2}(\-|\/|\.)\d{1,2}'
+  multiline.negate: true
+  multiline.match: after
+  fields:
+    project: "258"
+    env: test
+    log_type: mysql-slow
+
+filebeat.config.modules:
+  path: ${path.config}/modules.d/*.yml
+  reload.enabled: false
+output.logstash:
+   hosts: ["logstash:5067"]
+   loadbalance: true
+processors:
+  - add_host_metadata: ~
+  - add_cloud_metadata: ~
+  - add_docker_metadata: ~
+  - add_kubernetes_metadata: ~
+EOF
+

@@ -1,0 +1,13 @@
+# This file is where you define your pipelines. You can define multiple.
+# For more information on multiple pipelines, see the documentation:
+#   https://www.elastic.co/guide/en/logstash/current/multiple-pipelines.html
+
+- pipeline.id: debug
+  path.config: "/usr/share/logstash/pipeline/00-debug_by_fb.conf"
+
+#- pipeline.id: nginx
+#  path.config: "/usr/share/logstash/pipeline/01-nginx.conf"
+#
+#- pipeline.id: mysql
+#  path.config: "/usr/share/logstash/pipeline/02-mysql-slow-and-game-log.conf"
+#  pipeline.workers: 2

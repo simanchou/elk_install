@@ -1,0 +1,27 @@
+- type: log
+  enabled: true
+  paths:
+    - /data/volumes/balancer/log/access*
+  json.keys_under_root: true
+  json.overwrite_keys: true
+  fields_under_root: true
+  fields:
+    hostname: ${HOSTNAME}
+    project: "${PROJECT}"
+    env: ${ENV}
+    source_type: nginx
+    log_type: http
+
+- type: log
+  enabled: true
+  paths:
+    - /data/volumes/balancer/log/stream_access*
+  json.keys_under_root: true
+  json.overwrite_keys: true
+  fields_under_root: true
+  fields:
+    hostname: ${HOSTNAME}
+    project: "${PROJECT}"
+    env: ${ENV}
+    source_type: nginx
+    log_type: stream

@@ -1,0 +1,27 @@
+#- type: log
+#  enabled: true
+#  paths:
+#    - /data/logs/mysqld/mysql_error.log
+#  fields_under_root: true
+#  multiline.pattern: '^\[?20\d{2}(\-|\/|\.)\d{1,2}(\-|\/|\.)\d{1,2}'
+#  multiline.negate: true
+#  multiline.match: after
+#  fields:
+#    hostname: ${HOSTNAME}
+#    project: "${PROJECT}"
+#    env: ${ENV}
+#    log_type: mysql-error
+
+- type: log
+  enabled: true
+  paths:
+    - /var/log/mysqld/mysql_slow_query.log
+  fields_under_root: true
+  multiline.pattern: '^# Time: \[?20\d{2}(\-|\/|\.)\d{1,2}(\-|\/|\.)\d{1,2}'
+  multiline.negate: true
+  multiline.match: after
+  fields:
+    hostname: ${HOSTNAME}
+    project: "${PROJECT}"
+    env: ${ENV}
+    log_type: mysql-slow

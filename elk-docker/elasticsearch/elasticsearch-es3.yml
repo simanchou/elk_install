@@ -1,0 +1,19 @@
+cluster.name: "es-cluster"
+network.host: 0.0.0.0
+
+# custom config
+# 节点名使用主机名
+node.name: "es3.elk.prod"
+network.publish_host: 10.200.78.43
+#初始主节点
+cluster.initial_master_nodes: ["10.200.78.40"]
+#集群节点列表
+discovery.seed_hosts: ["10.200.78.40","10.200.78.42","10.200.78.43"]
+#是否可以为主节点
+node.master: true
+#是否为数据节点
+node.data: true
+# 开启跨域访问支持，默认为false
+http.cors.enabled: true
+# 跨域访问允许的域名地址，(允许所有域名)以上使用正则
+http.cors.allow-origin: /.*/
